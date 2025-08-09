@@ -12,7 +12,61 @@ json: "{" k_v_pair  ("," k_v_pair)* "}"
 #include "parser_combinator/mpc.h"
 #include <editline.h>
 #include <stdio.h>
+#include <string.h>
 
+/* Use operator string to see which operation to perform */
+long eval_op(long x, char *op, long y) {
+  if (strcmp(op, "+") == 0) {
+    return x + y;
+  }
+  if (strcmp(op, "-") == 0) {
+    return x - y;
+  }
+  if (strcmp(op, "*") == 0) {
+    return x * y;
+  }
+  if (strcmp(op, "/") == 0) {
+    return x / y;
+  }
+  return 0;
+}
+
+/*
+Ast looks like that:
+    root
+    |
+    +--  operator (child[1])
+    |
+    +-- expr | number | regex (child[2])
+    |
+    +-- expr (child[3])
+        |
+        +-- operator (sub-child[1])
+        |
+        +-- expr | number | regex (sub-child[1])
+        |
+        +-- expr | ... and so on
+
+*/
+long eval(mpc_ast_t *ast) {
+  /* base case: if it is number return it */
+  if (strstr(ast->tag, "number")) {
+    return atol(ast->contents);
+  }
+  /* the op is always in second child */
+  char *op = ast->children[1]->contents;
+
+  long x = eval(ast->children[2]);
+
+  /* Iterate the remaining children and combining. */
+  int i = 3;
+  while (strstr(ast->children[i]->tag, "expr")) {
+    x = eval_op(x, op, eval(ast->children[i]));
+    i++;
+  }
+
+  return x;
+}
 /* polish notation grammar parser */
 int main(void) {
   mpc_parser_t *Operator = mpc_new("operator");
@@ -23,8 +77,8 @@ int main(void) {
   mpca_lang(MPCA_LANG_DEFAULT,
             R"(
 
-        operator: '+' | '-' | '*' | '/' ;
-        number: /-?[0-9]+/ ;
+        operator: '+' | '-' | '*' | '/' | '%' ;
+        number: /-?[0-9]+(\.[0-9]+)?/  ;
         expr: <number> | '(' <operator> <expr>+ ')' ;
         polish: /^/ <operator> <expr>+ /$/ ;
 
@@ -36,11 +90,11 @@ int main(void) {
 
   while (1) {
     char *input = readline("PLN parser > ");
-
     /* try parse user input */
     mpc_result_t res;
     if (mpc_parse("<stdin>", input, Polish, &res)) {
-      mpc_ast_print(res.output);
+      long result = eval(res.output);
+      printf("%li\n", result);
       mpc_ast_delete(res.output);
     } else {
       mpc_err_print(res.error);
